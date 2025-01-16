@@ -24,14 +24,34 @@ int isCSV(char *pathname)
         return 0;
     }
 
-    if (strcmp(pathname + len - 4, ".csv") == 0) // if it doesnt end with .csv
-    {
+    if (strcmp(pathname + len - 4, ".csv") == 0)
+    { // if it doesnt end with .csv
         return 1;
     }
 
     fprintf(stderr, "Read csv failed, doesn't end with .csv \n");
 
     return 0;
+}
+
+void cleanup(char *addr_string, char *data_string, char *buffer, struct Request *requests)
+{
+    if (addr_string != NULL)
+    {
+        free(addr_string);
+    }
+    if (data_string != NULL)
+    {
+        free(data_string);
+    }
+    if (buffer != NULL)
+    {
+        free(buffer);
+    }
+    if (requests != NULL)
+    {
+        free(requests);
+    }
 }
 
 char *del_leading_zero(char *pointer)
@@ -52,7 +72,7 @@ char *del_leading_zero(char *pointer)
     return pointer + i;
 }
 
-struct Request *readCSV(char *pathname, char *progname, unsigned long *numRequests)
+struct Request *readCSV(char *pathname, const char *progname, unsigned long *numRequests)
 {
 
     if (pathname == NULL)
@@ -64,7 +84,6 @@ struct Request *readCSV(char *pathname, char *progname, unsigned long *numReques
     if (!isCSV(pathname))
     {
         fprintf(stderr, "This isn't a csv file. \n");
-        print_help(progname);
         return NULL;
     }
 
@@ -116,6 +135,7 @@ struct Request *readCSV(char *pathname, char *progname, unsigned long *numReques
         {
         case '\0':
             fprintf(stderr, "Error, wrong csv-file-format in line %d. Expected: (\"R\"|\"W\"), but got:  \n", line);
+            cleanup(addr_string, data_string, buffer, requests);
             return NULL;
         case 'R':
             we = 0;
@@ -125,15 +145,17 @@ struct Request *readCSV(char *pathname, char *progname, unsigned long *numReques
             break;
         default:
             fprintf(stderr, "Error, wrong csv-file-format in line %d. Expected: (\"R\"|\"W\"), but got: %c \n", line, buffer[i]);
+            cleanup(addr_string, data_string, buffer, requests);
             return NULL;
         }
 
         i++;
 
         //---------------------- Komma --------------------
-        if (buffer[i] != ';')
+        if (buffer[i] != ',')
         {
-            fprintf(stderr, "Error, wrong csv-file-format in line %d. Expected: (\";\").\n", line);
+            fprintf(stderr, "Error, wrong csv-file-format in line %d. Expected: (\",\").\n", line);
+            cleanup(addr_string, data_string, buffer, requests);
             return NULL;
         }
 
@@ -142,7 +164,7 @@ struct Request *readCSV(char *pathname, char *progname, unsigned long *numReques
         //------------------- addressReading ------------------
         int addr_char_counter = 0;
 
-        while (addr_char_counter < 10 && buffer[i] != ';' && buffer[i] != '\0')
+        while (addr_char_counter < 10 && buffer[i] != ',' && buffer[i] != '\0')
         {
             addr_string[addr_char_counter] = buffer[i];
             addr_char_counter++;
@@ -153,14 +175,16 @@ struct Request *readCSV(char *pathname, char *progname, unsigned long *numReques
         if (addr_char_counter == 0)
         {
             fprintf(stderr, "Error, wrong csv-file-format in line %d, no address given.\n", line);
+            cleanup(addr_string, data_string, buffer, requests);
             return NULL;
         }
 
         //------------------- Komma ------------------
 
-        if (buffer[i] != ';')
+        if (buffer[i] != ',')
         {
-            fprintf(stderr, "Error, wrong csv-file-format in line %d. Expected: (\";\").\n", line);
+            fprintf(stderr, "Error, wrong csv-file-format in line %d. Expected: (\",\").\n", line);
+            cleanup(addr_string, data_string, buffer, requests);
             return NULL;
         }
 
@@ -180,12 +204,14 @@ struct Request *readCSV(char *pathname, char *progname, unsigned long *numReques
 
         if (we == 0 && data_char_counter != 0)
         {
-            fprintf(stderr, "Error, wrong csv-file-format in line %d, data given when specifying \"R\" or \";\" is missing here to clarify that there is no data input.\n", line);
+            fprintf(stderr, "Error, wrong csv-file-format in line %d, data given when specifying \"R\" or \",\" is missing here to clarify that there is no data input.\n", line);
+            cleanup(addr_string, data_string, buffer, requests);
             return NULL;
         }
         else if (we == 1 && data_char_counter == 0)
         {
             fprintf(stderr, "Error, wrong csv-file-format in line %d, there needs to be data when specifying \"W\".\n", line);
+            cleanup(addr_string, data_string, buffer, requests);
             return NULL;
         }
 
@@ -198,6 +224,8 @@ struct Request *readCSV(char *pathname, char *progname, unsigned long *numReques
             if (testbuffer == NULL)
             { // memmory allocation was successfull
                 fprintf(stderr, "Memory allocation failed while reading the csv-file .\n");
+                cleanup(addr_string, data_string, buffer, requests);
+                //                free(testbuffer); //TODO
                 return NULL;
             }
             // if this is the last line in the file -> the doesn´t have to be a new line, so...
@@ -208,8 +236,12 @@ struct Request *readCSV(char *pathname, char *progname, unsigned long *numReques
             else
             {
                 fprintf(stderr, "Error, wrong csv-file-format in line %d, Expected: (\"\\n\"), but got %c .\n", line, buffer[i]);
+                cleanup(addr_string, data_string, buffer, requests);
+                free(testbuffer);
                 return NULL;
             }
+
+            free(testbuffer);
         }
 
         i++;
@@ -219,6 +251,7 @@ struct Request *readCSV(char *pathname, char *progname, unsigned long *numReques
         if (buffer[i] != '\0')
         {
             fprintf(stderr, "Error, wrong csv-file-format in line %d (I literally can`t imagine how you could end up here).\n", line);
+            cleanup(addr_string, data_string, buffer, requests);
             return NULL;
         }
 
@@ -243,17 +276,19 @@ struct Request *readCSV(char *pathname, char *progname, unsigned long *numReques
         if (*endptr != '\0')
         { // if converstion failed
             fprintf(stderr, "Error, wrong csv-file-format in line %d, can't convert address.\n", line);
+            cleanup(addr_string, data_string, buffer, requests);
             return NULL;
         }
 
         if (data_char_counter != 0)
         { // if data was given
             data_string = del_leading_zero(data_string);
-            data = (uint32_t)strtoul(addr_string, &endptr, 0);
+            data = (uint32_t)strtoul(data_string, &endptr, 0);
 
             if (*endptr != '\0')
             { // if converstion failed
                 fprintf(stderr, "Error, wrong csv-file-format in line %d, can't convert data.\n", line);
+                cleanup(addr_string, data_string, buffer, requests);
                 return NULL;
             }
         }
@@ -273,7 +308,8 @@ struct Request *readCSV(char *pathname, char *progname, unsigned long *numReques
 
             if (!new_requests)
             { // if realloc failed
-                fprintf(stderr, "Error, couldn't allocate Memmory.\n", line);
+                fprintf(stderr, "Error, couldn't allocate Memmory.\n");
+                cleanup(addr_string, data_string, buffer, requests);
                 return NULL;
             }
             requests = new_requests;
@@ -288,8 +324,12 @@ struct Request *readCSV(char *pathname, char *progname, unsigned long *numReques
     }
 
     if (line == 0)
-    { // if
+    {
         fprintf(stderr, "Error, file is empty...\n", line);
+        if (buffer != NULL)
+        {
+            free(buffer);
+        }
         return NULL;
     }
 
@@ -305,6 +345,7 @@ struct Request *readCSV(char *pathname, char *progname, unsigned long *numReques
     requests = new_requests;
 
     free(buffer);
+
     if (fclose(file) != 0)
     { // if closing the file didn´t work
         fprintf(stderr, "Error while closing the File.\n");
